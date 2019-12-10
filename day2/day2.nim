@@ -26,9 +26,10 @@ proc execProgram(codes: var seq[int64], noun: int64, verb: int64): int64 =
 
 
 proc main =
-    let input = readFile("input.txt")
-    let inputs = input.split(',')
+    let rawInput = readFile("input.txt")
+    let inputs = rawInput.split(',')
     var nums = newSeq[int64](0)
+    echo inputs
     for i in inputs:
         var x: int64
         assert parseBiggestInt(i, x) > 0
