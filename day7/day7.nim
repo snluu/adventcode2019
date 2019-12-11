@@ -107,25 +107,6 @@ proc execProgram(
   result = execProgramAt(codes, pi, outputAction, pos)
   assert result == -1
 
-proc execAmplifiers(
-  codes: seq[int64],
-  phases: array[NumAmps, int64],
-  maxThruster: var int64,
-) =
-  var output = 0'i64
-  for i, phase in phases:
-    var pi: ProgramInputs = initDeque[int64]()
-    pi.addLast(phase)
-    pi.addLast(output)
-
-    var codesCopy = codes
-    assert execProgram(codesCopy, pi) == -1
-    output = codesCopy[0]
-  
-  if output > maxThruster:
-    maxThruster = output
-    echo "Found new max thruster at ", maxThruster, " with phases ", phases
-
 proc execAmplifiersLoop(
   codes: seq[int64],
   phases: array[NumAmps, int64],
@@ -199,13 +180,12 @@ proc main =
     codes.add(parseBiggestInt(i))
 
   var maxThruster: int64
-  # var phases = [0'i64, 1'i64, 2'i64, 3'i64, 4'i64]
-  var phases = [5'i64, 6'i64, 7'i64, 8'i64, 9'i64]
+  var phases = [0'i64, 1'i64, 2'i64, 3'i64, 4'i64]
+  # var phases = [5'i64, 6'i64, 7'i64, 8'i64, 9'i64]
   permutatePhases(
     phases,
     0,
     proc(ps: array[NumAmps, int64]) =
-      # execAmplifiers(codes, ps, maxThruster)
       execAmplifiersLoop(codes, ps, maxThruster)      
   )
 
