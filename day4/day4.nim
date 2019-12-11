@@ -1,5 +1,3 @@
-import strutils
-
 proc tryDigit(d: char, doubles: int, num: var string, count: var int,
     attempts: var int) =
   var doubles = doubles
