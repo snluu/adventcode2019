@@ -4,11 +4,22 @@ import deques
 
 var OpsParamCount: array[0..99, int]
 const NumAmps = 5;
-const PosHalted = -1
-const PosNoInput = -2
+const PosHalted = -1'i64
+const PosNoInput = -2'i64
 
 type
-  ProgramInputs = Deque[int64]
+  Program = object
+    name: string
+    codes: seq[int64]
+    inputs: Deque[int64]
+    outputs: Deque[int64]
+    pos: int64
+    halted: bool
+
+proc initProgram(codes: seq[int64]): Program =
+  result.codes = codes
+  result.inputs = initDeque[int64]()
+  result.outputs = initDeque[int64]()
 
 proc initOpsParams =
   OpsParamCount[1] = 3
@@ -20,133 +31,110 @@ proc initOpsParams =
   OpsParamCount[7] = 3
   OpsParamCount[8] = 3
 
-proc readParam(pos: int, codes: var seq[int64], modes: var int64): int64 =
+proc readParam(offset: int64, prog: Program, modes: var int64): int64 =
   let mode = modes mod 10
   modes = modes div 10
   if mode == 0:
-    result = codes[codes[pos]]
+    result = prog.codes[prog.codes[prog.pos + offset]]
+  elif mode == 1:
+    result = prog.codes[prog.pos + offset]
   else:
-    result = codes[pos]
+    assert false, "Unrecognized mode " & $mode
   # echo "  Param: ", result
 
-proc execCode(
-  pos: int,
-  codes: var seq[int64],
-  pi: var ProgramInputs,
-  outputAction: proc (val: int64),
-): int =
-  let x = codes[pos]
+proc execCode(prog: var Program): int64 =
+  let x = prog.codes[prog.pos]
   let opsCode = x mod 100
 
   if opsCode == 99:
-    return -1
+    prog.halted = true
+    return PosHalted
 
-  echo "Processing at position ", pos, ". Ops code: ", opsCode
   var paramModes = x div 100
 
+  if prog.name.len > 0:
+    write(stdout, "Program " & prog.name & ": ")
+  echo "Processing at position ", prog.pos, ". Ops code: ", opsCode, ". Modes: ", paramModes
+
+  
   assert(OpsParamCount[opsCode] > 0, "Unknown ops code: " & $opsCode)
 
   case opsCode
   of 1: # add
-    let n1 = readParam(pos + 1, codes, paramModes)
-    let n2 = readParam(pos + 2, codes, paramModes)
-    codes[codes[pos + 3]] = n1 + n2
+    let n1 = readParam(1, prog, paramModes)
+    let n2 = readParam(2, prog, paramModes)
+    prog.codes[prog.codes[prog.pos + 3]] = n1 + n2
   of 2: # mult
-    let n1 = readParam(pos + 1, codes, paramModes)
-    let n2 = readParam(pos + 2, codes, paramModes)
-    codes[codes[pos + 3]] = n1 * n2
+    let n1 = readParam(1, prog, paramModes)
+    let n2 = readParam(2, prog, paramModes)
+    prog.codes[prog.codes[prog.pos + 3]] = n1 * n2
   of 3: # input
-    let p = codes[pos + 1]
-    if pi.len == 0:
-      return PosNoInput
-    codes[p] = pi.popFirst()
+    let p = prog.codes[prog.pos + 1]
+    if prog.inputs.len == 0: return PosNoInput
+    prog.codes[p] = prog.inputs.popFirst()
   of 4: # output
-    codes[0] = codes[codes[pos + 1]]
-    outputAction(codes[0])
+    prog.codes[0] = prog.codes[prog.codes[prog.pos + 1]]
+    prog.outputs.addLast(prog.codes[0])
   of 5: # jump if true
-    let n1 = readParam(pos + 1, codes, paramModes)
-    let n2 = readParam(pos + 2, codes, paramModes)
+    let n1 = readParam(1, prog, paramModes)
+    let n2 = readParam(2, prog, paramModes)
     if n1 != 0:
-      return int(n2)
+      prog.pos = n2
+      return n2
   of 6: # jump if false
-    let n1 = readParam(pos + 1, codes, paramModes)
-    let n2 = readParam(pos + 2, codes, paramModes)
+    let n1 = readParam(1, prog, paramModes)
+    let n2 = readParam(2, prog, paramModes)
     if n1 == 0:
-      return int(n2)
+      prog.pos = n2
+      return n2
   of 7: # less than
-    let n1 = readParam(pos + 1, codes, paramModes)
-    let n2 = readParam(pos + 2, codes, paramModes)
-    codes[codes[pos + 3]] = if n1 < n2: 1 else: 0
+    let n1 = readParam(1, prog, paramModes)
+    let n2 = readParam(2, prog, paramModes)
+    prog.codes[prog.codes[prog.pos + 3]] = if n1 < n2: 1 else: 0
   of 8: # equals
-    let n1 = readParam(pos + 1, codes, paramModes)
-    let n2 = readParam(pos + 2, codes, paramModes)
-    codes[codes[pos + 3]] = if n1 == n2: 1 else: 0
+    let n1 = readParam(1, prog, paramModes)
+    let n2 = readParam(2, prog, paramModes)
+    prog.codes[prog.codes[prog.pos + 3]] = if n1 == n2: 1 else: 0
   else:
     assert(false, "Unknown ops code: " & $opsCode)
 
-  return pos + OpsParamCount[opsCode] + 1 # 1 for the ops code itself
+  prog.pos += OpsParamCount[opsCode] + 1 # 1 for the ops code itself
+  return prog.pos
 
-proc execProgramAt(
-  codes: var seq[int64],
-  pi: var ProgramInputs,
-  outputAction: proc (val: int64) = proc (val: int64) = discard,
-  pos: var int,
-): int =
-  result = pos
-  while result >= 0:
-    result = execCode(pos, codes, pi, outputAction)
-    if result >= 0:
-      pos = result
-
-proc execProgram(
-  codes: var seq[int64],
-  pi: var ProgramInputs,
-  outputAction: proc (val: int64) = proc (val: int64) = discard,
-): int =
-  var pos = 0
-  result = execProgramAt(codes, pi, outputAction, pos)
-  assert result == -1
+proc execProgram(prog: var Program): int64 =
+  while result >= 0 and not prog.halted:
+    result = execCode(prog)
 
 proc execAmplifiersLoop(
   codes: seq[int64],
   phases: array[NumAmps, int64],
   maxThruster: var int64,
 ) =
-  var inputs: array[NumAmps, ProgramInputs]
-  var ampCodes: array[NumAmps, seq[int64]]
-  var positions: array[NumAmps, int]
-  var done: array[NumAmps, bool]
-  for i in low(inputs)..high(inputs):
-    inputs[i] = initDeque[int64]()
-    inputs[i].addLast(phases[i])
-    ampCodes[i] = codes # copy
-  
-  inputs[0].addLast(0)
+  var programs: array[NumAmps, Program]
+  for i in low(programs)..high(programs):
+    programs[i] = initProgram(codes)
+    programs[i].name = $i
+    programs[i].inputs.addLast(phases[i])
+    
+  programs[0].inputs.addLast(0)
 
-  while true:
+  while not programs[^1].halted:
     for i,phase in phases:
-      if done[i]:
+      if programs[i].halted:
         continue
 
-      let returnCode = execProgramAt(
-        ampCodes[i],
-        inputs[i],
-        proc(outputVal: int64) =
-          if i == high(inputs):
-            inputs[0].addLast(outputVal)
-          else:
-            inputs[i+1].addLast(outputVal),
-        positions[i]
-      )
-
-      if returnCode == PosHalted:
-        done[i] = true
-        if i == high(done):
-          let thruster = ampCodes[i][0]
-          if thruster > maxThruster:
-            maxThruster = thruster
-            echo "Found new max thruster at ", maxThruster, " with phases ", phases
-          return  
+      discard execProgram(programs[i])
+      let pipeOutputTo = if i == high(programs): 0 else: i + 1
+      
+      while programs[i].outputs.len > 0:
+        programs[pipeOutputTo].inputs.addLast(programs[i].outputs.popFirst())
+      
+      if programs[i].halted and i == high(programs):
+        let thruster = programs[i].codes[0]
+        if thruster > maxThruster:
+          maxThruster = thruster
+          echo "Found new max thruster at ", maxThruster, " with phases ", phases
+        return  
 
 proc swap[T](arr: var openArray[T], x, y: int){.inline.} =
   if x == y:
@@ -161,14 +149,14 @@ proc permutatePhases(
   index: int,
   action: proc(arr: array[NumAmps, int64]),
 ) =
-      if index == high(phases):
-        action(phases)
-        return
-      
-      for i in index..high(phases):
-        swap(phases, i, index)
-        permutatePhases(phases, index + 1, action)
-        swap(phases, i, index)
+  if index == high(phases):
+    action(phases)
+    return
+  
+  for i in index..high(phases):
+    swap(phases, i, index)
+    permutatePhases(phases, index + 1, action)
+    swap(phases, i, index)
 
 
 proc main =
