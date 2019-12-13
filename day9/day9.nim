@@ -4,18 +4,18 @@ import deques
 var OpsParamCount: array[0..99, int]
 const PosHalted = -1'i64
 const PosNoInput = -2'i64
-
+const ProgramSize = 10240
 type
   Program = object
     name: string
-    codes: seq[int64]
+    codes: array[ProgramSize, int64]
     inputs: Deque[int64]
     outputs: Deque[int64]
     pos: int64
     relativeBase: int64
     halted: bool
 
-proc initProgram(codes: seq[int64]): Program =
+proc initProgram(codes: array[ProgramSize, int64]): Program =
   result.codes = codes
   result.inputs = initDeque[int64]()
   result.outputs = initDeque[int64]()
@@ -133,7 +133,7 @@ proc main =
   initOpsParams()
   let rawInput = readFile("input.txt")
   let inputs = rawInput.strip().split(',')
-  var codes = newSeq[int64](10240)
+  var codes: array[ProgramSize, int64]
   for i, n in inputs:
     codes[i] = parseBiggestInt(n)
 
