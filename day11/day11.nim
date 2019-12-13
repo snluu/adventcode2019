@@ -11,7 +11,7 @@ const ProgramSize = 10240
 # Turn right should go to the next movement (wrapped around)
 # Turn left should go to the previous movement
 const Directions = [(0, -1), (1, 0), (0, 1), (-1, 0)]
-const Colors = ["BLACK", "WHITE"]
+# const Colors = ["BLACK", "WHITE"]
 
 type
   Program = object
