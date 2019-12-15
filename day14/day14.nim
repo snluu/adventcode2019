@@ -60,6 +60,8 @@ proc calculateOres(
     let sub = calculateOres(
       input.name, input.quantity * multiplier, reactions, inventory)
     result += sub
+
+
   # echo result, " ORE needed for ", quantityNeeded, " ", forName
 
 
@@ -76,15 +78,29 @@ proc main =
     reactions[result.name] = Reaction(result: result, inputs: parseChems(parts[0]))
     inventory[result.name] = 0
 
-  var ores = 1000000000000'i64
-  var fuel = 0'i64
-  while true:
-    let oresNeeded = calculateOres("FUEL", 1, reactions, inventory)
-    if oresNeeded > ores:
-      break
-    fuel += 1
+  let maxOres = 1000000000000'i64
 
-  echo "Fuels made with the original 1T ORE's: ", fuel
+  let oresForOneFuel = calculateOres("FUEL", 1, reactions, inventory)
+  echo "Part 1: ", oresForOneFuel
+
+  var searchHigh = (maxOres div oresForOneFuel) * 2
+  var searchLow = 1'i64
+
+  while searchLow < (searchHigh - 1):
+    echo "Low: ", searchLow, ". High: ", searchHigh
+    let search = (searchHigh + searchLow) div 2
+    for k in inventory.keys:
+      inventory[k] = 0
+
+    let ores = calculateOres("FUEL", search, reactions, inventory)
+    if ores > maxOres:
+      searchHigh = search
+    else:
+      searchLow = search
+
+    # echo "Low: ", searchLow, ". High: ", searchHigh
+
+  echo "Part 2: ", searchLow
 
 when isMainModule:
   main()
