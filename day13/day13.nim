@@ -1,11 +1,13 @@
 import strutils
 import deques
 import tables
+import os
+import terminal
 
 var OpsParamCount: array[0..99, int]
 const PosHalted = -1'i64
 const PosNoInput = -2'i64
-const ProgramSize = 10240
+const ProgramSize = 202400
 
 type
   Program = object
@@ -17,34 +19,9 @@ type
     relativeBase: int64
     halted: bool
 
-  Node = ref object
-    prog: Program
-    score: int64
-    tiles: Table[int, Table[int, int]]
-    tileTypeCount: array[0..4, int]
-
-proc cloneProgram(p: Program): Program =
-  result.name = p.name
-  result.codes = p.codes
-  result.pos = p.pos
-  result.relativeBase = p.relativeBase
-  result.halted = p.halted
-  result.inputs = initDeque[int64]()
-  result.outputs = initDeque[int64]()
-
-proc cloneNode(node: Node): Node =
-  if node == nil:
-    return
-
-  new(result)
-  result.prog = cloneProgram(node.prog)
-  result.score = node.score
-  result.tileTypeCount = node.tileTypeCount
-
-  for x in node.tiles.keys:
-    result.tiles[x] = initTable[int, int]()
-    for y, val in node.tiles[x]:
-      result.tiles[x][y] = val
+  Tile = object
+    # count: int
+    value: int
 
 proc initProgram(codes: array[ProgramSize, int64]): Program =
   result.codes = codes
@@ -162,63 +139,20 @@ proc execProgram(prog: var Program): int64 =
 
 proc getTile(
   x, y, : int,
-  tiles: Table[int, Table[int, int]],
+  tiles: Table[int, Table[int, Tile]],
 ): int =
   if tiles.hasKey(x) and tiles[x].hasKey(y):
-    result = tiles[x][y]
+    result = tiles[x][y].value
 
 proc setTile(
   x, y, value: int,
-  tiles: var Table[int, Table[int, int]],
+  tiles: var Table[int, Table[int, Tile]],
 ) =
   # echo "Painting ", Colors[color], " at ", x, ",", y
-  discard tiles.hasKeyOrPut(x, initTable[int, int]())
-  # discard tiles[x].hasKeyOrPut(y, 0)
+  discard tiles.hasKeyOrPut(x, initTable[int, Tile]())
+  discard tiles[x].hasKeyOrPut(y, Tile())
 
-  tiles[x][y] = value
-
-proc processProgramOutput(node: var Node) =
-  assert node.prog.outputs.len mod 3 == 0
-  while node.prog.outputs.len > 0:
-    let x = int(node.prog.outputs.popFirst())
-    let y = int(node.prog.outputs.popFirst())
-    let value = node.prog.outputs.popFirst()
-
-    if x == -1 and y == 0:
-      # update score
-      node.score = value
-    else:
-      node.tileTypeCount[getTile(x, y, node.tiles)] -= 1
-      setTile(x, y, int(value), node.tiles)
-      node.tileTypeCount[value] += 1
-
-proc bfs(nodes: var openArray[Node]): int64 =
-  result = -1
-  if nodes.len == 0:
-    return -1
-
-  var nextNodes: seq[Node]
-  for node in nodes.mitems:
-    let resultCode = execProgram(node.prog)
-    assert resultCode == PosHalted or resultCode == PosNoInput
-
-    processProgramOutput(node)
-    if node.tileTypeCount[2] == 0 and node.score > 0:
-      return node.score
-
-    if resultCode == PosHalted:
-      continue
-
-    for step in -1..1:
-      var n = cloneNode(node)
-      n.prog.inputs.addLast(step)
-      nextNodes.add(n)
-
-  if nextNodes.len == 0:
-    return -1
-
-  return bfs(nextNodes)
-
+  tiles[x][y].value = value
 
 proc main =
   initOpsParams()
@@ -228,12 +162,71 @@ proc main =
   for i, n in inputs:
     codes[i] = parseBiggestInt(n)
 
+  # Part 1
+  var prog = initProgram(codes)
+  prog.codes[0] = 2 # Part 2
+  var tiles: Table[int, Table[int, Tile]]
+  var tileTypeCount: array[0..4, int]
 
-  var nodes: array[1, Node]
-  new(nodes[0])
-  nodes[0].prog = initProgram(codes)
-  nodes[0].prog.codes[0] = 2 # Part 2 instruction
-  echo "Score: ", bfs(nodes)
+  var score, maxX, maxY, paddleX, ballX = 0
+
+  eraseScreen(stdout)
+  hideCursor(stdout)
+  flushFile(stdout)
+  while tileTypeCount[2] != 0 or score == 0:
+    let output = execProgram(prog)
+    # assert prog.outputs.len mod 3 == 0
+    while prog.outputs.len > 0:
+      let x = int(prog.outputs.popFirst())
+      let y = int(prog.outputs.popFirst())
+      maxX = max(x, maxX)
+      maxY = max(y, maxY)
+      let value = int(prog.outputs.popFirst())
+
+      if x == -1 and y == 0:
+        # update score
+        if value != 0:
+          score = value
+      else:
+        tileTypeCount[getTile(x, y, tiles)] -= 1
+        setTile(x, y, value, tiles)
+        tileTypeCount[value] += 1
+
+      if value == 3 or value == 4:
+        if value == 3: # paddle
+          paddleX = x
+        elif value == 4: # ball
+          ballX = x
+
+      setCursorPos(x, y)
+      let c = case value:
+      of 1: '#' # wall
+      of 2: 'X' # block
+      of 3: '_' # paddle
+      of 4: '0' # ball
+      else: ' '
+      write(stdout, c)
+
+    setCursorPos(0, maxY + 1)
+    write(stdout, "Score: " & $score)
+    flushFile(stdout)
+
+    sleep(20)
+
+    if output == PosNoInput:
+      if ballX != paddleX:
+        prog.inputs.addLast((ballX - paddleX) div abs(ballX - paddleX))
+      else:
+        prog.inputs.addLast(0)
+
+    if prog.halted:
+      prog.halted = false
+      prog.pos = 0
+
+  showCursor(stdout)
+  # displayTiles(maxX, maxY, tiles)
+  # echo "Score: ", score
+  # sleep(5)
 
 when isMainModule:
   main()
