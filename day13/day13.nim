@@ -211,11 +211,12 @@ proc main =
     write(stdout, "Score: " & $score)
     flushFile(stdout)
 
-    sleep(20)
+    sleep(2)
 
     if output == PosNoInput:
       if ballX != paddleX:
-        prog.inputs.addLast((ballX - paddleX) div abs(ballX - paddleX))
+        prog.inputs.addLast(
+          (ballX - paddleX) div abs(ballX - paddleX))
       else:
         prog.inputs.addLast(0)
 

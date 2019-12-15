@@ -1,0 +1,4 @@
+CC: stdlib_system.nim
+CC: stdlib_parseutils.nim
+CC: stdlib_strutils.nim
+CC: day14.nim
