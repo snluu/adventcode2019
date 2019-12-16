@@ -1,12 +1,14 @@
 import strutils
 import deques
 import tables
-import os
-import terminal
 
 var OpsParamCount: array[0..99, int]
 const PosHalted = -1'i64
 const PosNoInput = -2'i64
+
+# north south east, east
+const Directions = [1, 2, 3, 4]
+const Deltas = [(0, -1), (0, 1), (1, 0), (-1, 0)]
 
 type
   Program = object
@@ -17,10 +19,10 @@ type
     pos: int64
     relativeBase: int64
     halted: bool
-
-  Tile = object
-    # count: int
-    value: int
+  VisitMap = Table[int64, Table[int64, int]]
+  Node = object
+    prog: Program
+    x, y: int64
 
 proc copyTable[K, V](t: Table[K, V]): Table[K, V] =
   for k, v in t:
@@ -30,6 +32,13 @@ proc initProgram(codes: Table[int64, int64]): Program =
   result.codes = copyTable(codes)
   result.inputs = initDeque[int64]()
   result.outputs = initDeque[int64]()
+
+proc clonePrgram(p: Program): Program =
+  result.name = p.name
+  result = initProgram(p.codes)
+  result.pos = p.pos
+  result.relativeBase = p.relativeBase
+  result.halted = p.halted
 
 proc initOpsParams =
   OpsParamCount[1] = 3
@@ -141,22 +150,68 @@ proc execProgram(prog: var Program): int64 =
   while result >= 0 and not prog.halted:
     result = execCode(prog)
 
-proc getTile(
-  x, y, : int,
-  tiles: Table[int, Table[int, Tile]],
+proc visited(x, y: int64, m: VisitMap): bool =
+  result = m.hasKey(x) and m[x].hasKey(y)
+
+proc visit(x, y: int64, m: var VisitMap, value: int) =
+  discard m.hasKeyOrPut(x, initTable[int64, int]())
+  m[x][y] = value
+
+proc mapValue(x, y: int64, m: VisitMap): int =
+  if visited(x, y, m):
+    result = m[x][y]
+
+proc bfs(nodes: var openArray[Node], steps: int, m: var VisitMap): int =
+  var nextSteps: seq[Node]
+  for n in nodes.mitems:
+    let retCode = execProgram(n.prog)
+    assert retCode != PosHalted
+    assert not n.prog.halted
+    assert n.prog.outputs.len > 0
+    let output = n.prog.outputs.popFirst()
+    if output == 0: # hit a wall
+      continue
+
+    visit(n.x, n.y, m, int(output)) # fill the map
+    # elif output == 2: # found the vent
+    #   return steps
+
+    assert output == 1 or output == 2
+    for dir in Directions:
+      let x = n.x + Deltas[dir - 1][0]
+      let y = n.y + Deltas[dir - 1][1]
+      if visited(x, y, m):
+        continue
+
+      visit(x, y, m, 0)
+      nextSteps.add(Node(prog: clonePrgram(n.prog), x: x, y: y))
+      nextSteps[^1].prog.inputs.addLast(dir)
+
+  if nextSteps.len > 0:
+    result = bfs(nextSteps, steps + 1, m)
+
+proc bfs2(
+  coords: openArray[tuple[x: int64, y: int64]],
+  m: var VisitMap,
+  spaces: var int,
+  minutes: int
 ): int =
-  if tiles.hasKey(x) and tiles[x].hasKey(y):
-    result = tiles[x][y].value
+  result = minutes + 1
+  var next: seq[tuple[x: int64, y: int64]]
+  for loc in coords:
+    echo "At ", loc.x, ",", loc.y
+    for d in Deltas:
+      let x = loc.x + d[0]
+      let y = loc.y + d[1]
+      if mapValue(x, y, m) == 1:
+        spaces -= 1
+        visit(x, y, m, 3)
+        next.add((x: x, y: y))
 
-proc setTile(
-  x, y, value: int,
-  tiles: var Table[int, Table[int, Tile]],
-) =
-  # echo "Painting ", Colors[color], " at ", x, ",", y
-  discard tiles.hasKeyOrPut(x, initTable[int, Tile]())
-  discard tiles[x].hasKeyOrPut(y, Tile())
+  if spaces == 0:
+    return
 
-  tiles[x][y].value = value
+  return bfs2(next, m, spaces, minutes + 1)
 
 proc main =
   initOpsParams()
@@ -166,72 +221,31 @@ proc main =
   for i, n in inputs:
     codes[i] = parseBiggestInt(n)
 
-  # Part 1
-  var prog = initProgram(codes)
-  prog.codes[0] = 2 # Part 2
-  var tiles: Table[int, Table[int, Tile]]
-  var tileTypeCount: array[0..4, int]
+  var m: VisitMap
+  visit(0, 0, m, 0)
 
-  var score, maxX, maxY, paddleX, ballX = 0
+  var nodes: array[1..4, Node]
+  for dir in Directions:
+    let x = Deltas[dir - 1][0]
+    let y = Deltas[dir - 1][1]
+    visit(x, y, m, 0)
+    nodes[dir] = Node(prog: initProgram(codes), x: x, y: y)
+    nodes[dir].prog.inputs.addLast(dir)
 
-  eraseScreen(stdout)
-  hideCursor(stdout)
-  flushFile(stdout)
-  while tileTypeCount[2] != 0 or score == 0:
-    let output = execProgram(prog)
-    # assert prog.outputs.len mod 3 == 0
-    while prog.outputs.len > 0:
-      let x = int(prog.outputs.popFirst())
-      let y = int(prog.outputs.popFirst())
-      maxX = max(x, maxX)
-      maxY = max(y, maxY)
-      let value = int(prog.outputs.popFirst())
+  discard bfs(nodes, 0, m)
 
-      if x == -1 and y == 0:
-        # update score
-        if value != 0:
-          score = value
-      else:
-        tileTypeCount[getTile(x, y, tiles)] -= 1
-        setTile(x, y, value, tiles)
-        tileTypeCount[value] += 1
+  var startX, startY: int64
+  var spaces: int
+  for x, col in m:
+    for y, val in col:
+      if val == 2:
+        startX = x
+        startY = y
+      elif val == 1:
+        spaces += 1
 
-      if value == 3 or value == 4:
-        if value == 3: # paddle
-          paddleX = x
-        elif value == 4: # ball
-          ballX = x
+  echo bfs2([(x: startX, y: startY)], m, spaces, 0)
 
-      setCursorPos(x, y)
-      let c = case value:
-      of 1: '#' # wall
-      of 2: 'X' # block
-      of 3: '_' # paddle
-      of 4: '0' # ball
-      else: ' '
-      write(stdout, c)
-
-    setCursorPos(0, maxY + 1)
-    write(stdout, "Score: " & $score)
-    flushFile(stdout)
-
-    sleep(2)
-
-    if output == PosNoInput:
-      if ballX != paddleX:
-        prog.inputs.addLast(
-          (ballX - paddleX) div abs(ballX - paddleX))
-      else:
-        prog.inputs.addLast(0)
-
-    if prog.halted:
-      prog.halted = false
-      prog.pos = 0
-
-  showCursor(stdout)
-  # displayTiles(maxX, maxY, tiles)
-  # echo "Score: ", score
-  # sleep(5)
 
 when isMainModule:
   main()
