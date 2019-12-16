@@ -173,8 +173,8 @@ proc bfs(nodes: var openArray[Node], steps: int, m: var VisitMap): int =
       continue
 
     visit(n.x, n.y, m, int(output)) # fill the map
-    # elif output == 2: # found the vent
-    #   return steps
+    if output == 2: # found the vent
+      result = steps
 
     assert output == 1 or output == 2
     for dir in Directions:
@@ -188,7 +188,7 @@ proc bfs(nodes: var openArray[Node], steps: int, m: var VisitMap): int =
       nextSteps[^1].prog.inputs.addLast(dir)
 
   if nextSteps.len > 0:
-    result = bfs(nextSteps, steps + 1, m)
+    result = max(result, bfs(nextSteps, steps + 1, m))
 
 proc bfs2(
   coords: openArray[tuple[x: int64, y: int64]],
@@ -199,7 +199,7 @@ proc bfs2(
   result = minutes + 1
   var next: seq[tuple[x: int64, y: int64]]
   for loc in coords:
-    echo "At ", loc.x, ",", loc.y
+    # echo "At ", loc.x, ",", loc.y
     for d in Deltas:
       let x = loc.x + d[0]
       let y = loc.y + d[1]
@@ -232,7 +232,7 @@ proc main =
     nodes[dir] = Node(prog: initProgram(codes), x: x, y: y)
     nodes[dir].prog.inputs.addLast(dir)
 
-  discard bfs(nodes, 0, m)
+  echo "Part 1: ", bfs(nodes, 1, m)
 
   var startX, startY: int64
   var spaces: int
@@ -244,7 +244,7 @@ proc main =
       elif val == 1:
         spaces += 1
 
-  echo bfs2([(x: startX, y: startY)], m, spaces, 0)
+  echo "Part 2: ", bfs2([(x: startX, y: startY)], m, spaces, 0)
 
 
 when isMainModule:
